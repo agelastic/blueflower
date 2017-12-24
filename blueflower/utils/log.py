@@ -25,12 +25,20 @@ def log(message):
 
 
 def log_comment(comment):
-    message = '%s: %s' % (timestamp(), comment)
+    message = '%s' % (comment)
     print message
 
 
 def log_encrypted(ftype, filename=''):
     log('ENCRYPTED, %s, %s' % (ftype, filename))
+
+
+def log_exe(ftype, filename=''):
+    log('EXE, %s, %s' % (ftype, filename))
+
+
+def log_packed(ftype, filename=''):
+    log('EXE PACKED, %s, %s' % (ftype, filename))
 
 
 def log_entropy(ftype, filename=''):

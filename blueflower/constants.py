@@ -1,4 +1,4 @@
-# copyright (c) 2014 JP Aumasson <jeanphilippe.aumasson@gmail.com>
+# copyright (c) 2014-15 JP Aumasson <jeanphilippe.aumasson@gmail.com>
 #
 # This file is part of blueflower.
 #
@@ -18,17 +18,18 @@
 
 PROGRAM = 'blueflower'
 
-# regexes, enter string in lowercase for insensitive matching 
+# regexes, enter string in lowercase for insensitive matching
 INFILE = (
-    '^begin certificate',
-    '^passphrase',
-    '^password',
-    '^private[ -_]key',
-    '^privatekey',
-    '^rsakeypair',
-    '^secret[ -_]key',
-    '^secretkey',
-    '^sshhostkeys',
+    'begin certificate',
+    'begin pgp message',
+    'passphrase',
+    'password',
+    'private[ _-]key',
+    'privatekey',
+    'rsakeypair',
+    'secret[ _-]key',
+    'secretkey',
+    'sshhostkeys',
 )
 
 # regexes, case insensitive
@@ -37,6 +38,11 @@ INFILE = (
 # extensions of encrypted containers in types_from_extension
 # if extension is missing, type may be detected in types_from_signature
 INFILENAME = (
+    '\.bek',            # bitlocker
+    '\.tpm',            # bitlocker
+    '\.fve',            # bitlocker
+    '\.asc',            # ascii keys/messages
+    '\.crt',            # certs
     '\.jks',            # java key store
     '\.kdb',            # keypass (matches .kdbx)
     '\.key',            # openssl .key, apple .keychain, etc.
@@ -45,7 +51,9 @@ INFILENAME = (
     '\.kwallet',        # kwallet
     '\.ovpn',           # OpenVPN config
     '\.psafe3',         # passwordsafe
-    '\.pfx'.            # PRX-format keys
+    '\.p12',            # PKCS12 data
+    '\.p15',            # PKCS15 tokens
+    '\.pfx',            # PRX-format keys
     'cert8.db',         # mozilla
     'connect.inc',      # sql
     'default\.pass',    # dbman
@@ -57,6 +65,7 @@ INFILENAME = (
     'key3.db',          # mozilla
     'localconf',        # typo3
     'localsettings',    # wikimedia
+    'netrc',            # ~/.netrc
     'otr.fingerprints', # libpurple otr fingerprints
     'otr.private_key',  # libpurple otr keys
     'passlist',         # misc
@@ -83,16 +92,18 @@ SKIP = (
 
 BF_BZIP2 = 'bzip2'
 BF_DOCX = 'docx'
+BF_ELF = 'elf'
+BF_GPG = 'gpg'
 BF_GZ = 'gz'
 BF_PDF = 'pdf'
+BF_PE = 'pe'
+BF_PGD = 'pgd'
+BF_PGP = 'pgp'
 BF_TAR = 'tar'
 BF_TEXT = 'text'
-BF_ZIP = 'zip'
-BF_PGP = 'pgp'
-BF_PGD = 'pgd'
-BF_GPG = 'gpg'
 BF_TRUECRYPT = 'truecrypt'
 BF_XLSX = 'xlsx'
+BF_ZIP = 'zip'
 
 BF_UNKNOWN = 'unknown'
 
@@ -111,4 +122,9 @@ ENCRYPTED = (
     BF_PGD,
     BF_PGP,
     BF_TRUECRYPT,
+)
+
+EXE = (
+    BF_ELF,
+    BF_PE,
 )

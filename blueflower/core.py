@@ -1,4 +1,4 @@
-# copyright (c) 2014 JP Aumasson <jeanphilippe.aumasson@gmail.com>
+# copyright (c) 2014-15 JP Aumasson <jeanphilippe.aumasson@gmail.com>
 #
 # This file is part of blueflower.
 #
@@ -25,17 +25,22 @@ import signal
 import sys
 
 from blueflower import __version__
-from blueflower.constants import ENCRYPTED, INFILENAME, PROGRAM, SKIP
+from blueflower.constants import ENCRYPTED, EXE, INFILE, INFILENAME, PROGRAM, SKIP
 from blueflower.do import do_file
 from blueflower.types import type_file
 from blueflower.utils.hashing import key_derivation, HASH_BYTES
 from blueflower.utils.log import log_comment, log_encrypted, log_error, \
-    log_secret, timestamp
+    log_secret, log_exe, log_packed, timestamp
+from blueflower.utils.heuristics import looks_uniform
 
 
 HASHES = frozenset()
 HASH_KEY = 0
 HASH_REGEX = ''
+
+# compiled regexes used by modules
+RGX_INFILE = re.compile('')
+RGX_INFILENAME = re.compile('')
 
 
 class BFException(Exception):
@@ -51,15 +56,15 @@ def get_hashes(hashesfile, pwd):
     fin = open(hashesfile)
     regex = fin.readline().rstrip('\n')
     try:
-        (salt, verifier_file) = fin.readline().rstrip('\n').split(',')
+        (salt, verifier_from_file) = fin.readline().rstrip('\n').split(',')
     except ValueError:
         raise BFException('failed to extract verifier and salt')
 
-    (key, verifier_pwd, salt) = key_derivation(pwd, salt)
+    (key, verifier_from_pwd, salt) = key_derivation(pwd, salt)
 
     fail = False
 
-    if verifier_pwd != verifier_file:
+    if verifier_from_pwd != verifier_from_file:
         log_comment('verifier does not match (incorrect password?)')
         fail = True
     else:
@@ -101,7 +106,7 @@ def get_hashes(hashesfile, pwd):
 
 
 def init(path):
-    """determinines size and number of files"""
+    """determines size and number of files"""
     log_comment('initializing...')
     total_size = 0
     count = 0
@@ -110,13 +115,13 @@ def init(path):
         for skip in SKIP:
             if skip in dirs:
                 dirs.remove(skip)
-        for afile in files:
-            apath = os.path.join(root, afile)
+        for filename in files:
+            apath = os.path.join(root, filename)
             count += 1
             try:
                 total_size += os.path.getsize(apath)
             except OSError as e:
-                log_error(str(e), afile)
+                log_error(str(e), filename)
 
     readable = total_size
 
@@ -129,16 +134,15 @@ def init(path):
 
 def scan(path, count):
     """selects files to process, checks file names"""
-    log_comment('scanning files...')
-    infilename = re.compile('|'.join(INFILENAME))
-
+    log_comment('scanning %s:' % path)
     scanned = 0
-
     bar_width = 32
     if count < bar_width:
         bar_width = count
-    sys.stdout.write('%s\n' % ("=" * (bar_width)))
-    bar_blocksize = count/bar_width
+    if count == 0:
+        bar_width = 1
+    sys.stdout.write('%s\n' % ("=" * bar_width))
+    bar_blocksize = count / bar_width
     bar_left = bar_width
     bar_count = 0
 
@@ -146,24 +150,33 @@ def scan(path, count):
         for skip in SKIP:
             if skip in dirs:
                 dirs.remove(skip)
-        for afile in files:
-            abspath = os.path.abspath(os.path.join(root, afile))
-            res = infilename.search(afile.lower())
+        for filename in files:
+            abspath = os.path.abspath(os.path.join(root, filename))
+            res = RGX_INFILENAME.search(filename.lower())
             if res:
                 log_secret(res.group(), abspath)
 
             try:
-                (ftype, supported) = type_file(abspath)
-            except TypeError:
+                ftype, supported = type_file(abspath)
+            except TypeError as e:
                 log_error(str(e), abspath)
                 continue
 
             if supported:
-                if ftype in ENCRYPTED:  # report but do not process
-                    log_encrypted(ftype, afile)
+                if ftype in ENCRYPTED:  
+                    # report but do not process
+                    log_encrypted(ftype, abspath)
+                if ftype in EXE:  
+                    # report but do not process
+                    if looks_uniform(filename=abspath):
+                        log_packed(ftype, abspath)
+                    else:
+                        log_exe(ftype, abspath)
                 else:
+                    # process the file
                     do_file(ftype, abspath)
                     scanned += 1
+
             # update progress bar
             bar_count += 1
             if bar_count >= bar_blocksize and bar_left:
@@ -173,16 +186,20 @@ def scan(path, count):
                 bar_left -= 1
 
     sys.stdout.write("\n")
-    log_comment('%d files supported have been processed' % scanned)
+    log_comment('%d files supported were processed' % scanned)
     return scanned
 
 
 def count_logged(logfile):
     logs = open(logfile).read()
     secrets = logs.count('SECRET,')
-    log_comment('%d files or strings flagged as "secret"' % secrets)
+    log_comment('%d files or strings may contain secrets' % secrets)
     encrypted = logs.count('ENCRYPTED,')
-    log_comment('%d files or strings flagged as "encrypted"' % encrypted)
+    log_comment('%d files look encrypted' % encrypted)
+    exe = logs.count('EXE,')
+    packed = logs.count('EXE PACKED,')
+    log_comment('%d files look executable (including %d packed)' % \
+        (exe+packed, packed))
 
 
 def bye():
@@ -190,8 +207,7 @@ def bye():
 
 
 def banner():
-    flower = 'starting %s-%s'  % (PROGRAM, __version__)
-    print flower
+    print 'starting %s v%s'  % (PROGRAM, __version__)
 
 
 def signal_handler(*_):
@@ -205,24 +221,23 @@ def main():
     """main function"""
     parser = argparse.ArgumentParser(description='blueflower\
         <https://github.com/veorq/blueflower>')
-    parser.add_argument('path',\
+    parser.add_argument('path', 
         help='directory to explore')
     parser.add_argument('-H', metavar='hashesfile', required=False,\
         help='hashes file')
     parser.add_argument('-p', metavar='password',\
         help='hashes file password (optional, interactive prompt otherwise)')
+    parser.add_argument('-o', metavar='output_file',required=False,\
+        help='directory to save the log file')
 
     args = parser.parse_args()
-
     path = args.path
-    # = None if argument missing
-    hashesfile = args.H
+    hashesfile = args.H  # = None if argument missing
+    output_file = args.o
 
     if hashesfile:
-        # = None if argument missing
-        pwd = args.p
+        pwd = args.p  # = None if argument missing
         if not pwd:
-            # prompt for password
             pwd = getpass.getpass('password: ')
     else:
         pwd = ''
@@ -230,7 +245,7 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
 
     try:
-        blueflower(path, hashesfile, pwd)
+        blueflower(path, hashesfile, pwd, output_file)
     except BFException as e:
         print str(e)
         parser.print_usage()
@@ -239,17 +254,24 @@ def main():
     return 0
 
 
-def blueflower(path, hashesfile, pwd):
+def blueflower(path, hashesfile, pwd, output_file):
     """runs blueflower, returns name of the log file"""
+    global RGX_INFILE
+    global RGX_INFILENAME
+
     if not os.path.exists(path):
         raise BFException('%s does not exist' % path)
 
-    if hashesfile:
-        if not os.path.exists(hashesfile):
-            raise BFException('%s does not exist' % hashesfile)
+    if hashesfile and not os.path.exists(hashesfile):
+        raise BFException('%s does not exist' % hashesfile)
 
-
-    logfile = '%s-%s.csv' % (PROGRAM, timestamp())
+    if output_file:
+        if os.path.basename(output_file):
+            logfile = output_file
+        else:
+            logfile = output_file + '/%s-%s.csv' % (PROGRAM, timestamp())
+    else:
+        logfile = '%s-%s.csv' % (PROGRAM, timestamp())
 
     # reset any existing logger
     logger = logging.getLogger()
@@ -269,9 +291,22 @@ def blueflower(path, hashesfile, pwd):
     if hashesfile and pwd:
         try:
             get_hashes(hashesfile, pwd)
-        except BFException as e:
+        except BFException:
             raise
 
+    # precompile the regexes
+    rgx_infile = '|'.join(INFILE)
+    try:
+        RGX_INFILE = re.compile(rgx_infile, re.IGNORECASE)
+    except re.error:
+        raise BFException('invalid infile regex %s' % rgx_infile)
+    rgx_infilename = '|'.join(INFILENAME)
+    try:
+        RGX_INFILENAME = re.compile(rgx_infilename, re.IGNORECASE)
+    except re.error:
+        raise BFException('invalid infilename regex %s' % rgx_infilename)
+
+    # start slow operations
     count = init(path)
     scan(path, count)
     count_logged(logfile)

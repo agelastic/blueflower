@@ -18,13 +18,13 @@
 
 import io
 import os
-import re
 import zipfile
 
 from blueflower.do import do_data
-from blueflower.constants import BF_ZIP, ENCRYPTED, INFILENAME
+from blueflower.constants import BF_ZIP, ENCRYPTED
 from blueflower.types import type_data
 from blueflower.utils.log import log_encrypted, log_error, log_secret
+from blueflower.core import RGX_INFILENAME
 
 
 def zip_do_zip(azip, afile):
@@ -39,8 +39,6 @@ def zip_do_zip(azip, afile):
         else:
             log_error(str(e), afile)
 
-    infilename = re.compile('|'.join(INFILENAME))
-
     # iterate directly over file names
     for member in azip.namelist():
         # sort directories out
@@ -48,7 +46,7 @@ def zip_do_zip(azip, afile):
             continue
         # check file name
         filename = os.path.basename(member).lower()
-        res = infilename.search(filename)
+        res = RGX_INFILENAME.search(filename)
         if res:
             log_secret(res.group(), afile+':'+member)
 

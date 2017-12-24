@@ -1,4 +1,4 @@
-# copyright (c) 2014 JP Aumasson <jeanphilippe.aumasson@gmail.com>
+# copyright (c) 2014-15 JP Aumasson <jeanphilippe.aumasson@gmail.com>
 #
 # This file is part of blueflower.
 #
@@ -17,7 +17,7 @@
 
 
 import os
-
+import string
 
 from blueflower.utils.log import log_error
 import blueflower.constants as const
@@ -28,18 +28,17 @@ SIGNATURES_DICT = {
     '\x25\x50\x44\x46': const.BF_PDF,
     '\x42\x5a\x68': const.BF_BZIP2,
     '\x50\x4b\x03\x04': const.BF_ZIP,
+    '\x5a\x4d': const.BF_PE, 
+    '\x7f\x45\x4c\x46': const.BF_ELF, 
 }
 
 MAX_LEN = 1024  # to determine whether text or binary
-
 MAX_SIG_LEN = max(len(x) for x in SIGNATURES_DICT)
-
-TEXTCHARS = ''.join(map(chr, [7, 8, 9, 10, 12, 13, 27] + range(0x20, 0x100)))
 
 
 def is_text(data):
     """True if data is text content, False otherwise"""
-    return not bool(data.translate(None, TEXTCHARS))
+    return not bool(data.translate(None, string.printable))
 
 
 def type_from_signature(first_bytes):
@@ -64,9 +63,11 @@ def type_from_extension(filename):
     return (const.BF_UNKNOWN, False)
 
 
-def find_type(data, afile=''):
-    """guess a file's type based on signature and extension"""
-    (ftype, supported) = type_from_extension(afile)
+def type_data(data, filename=''):
+    """guess an in-memory file's type
+       optional file name (as found in archive or decompressed)
+    """
+    (ftype, supported) = type_from_extension(filename)
     if supported:
         return (ftype, supported)
     if is_text(data[:MAX_LEN]):
@@ -74,19 +75,19 @@ def find_type(data, afile=''):
     return type_from_signature(data[:MAX_SIG_LEN])
 
 
-def type_data(data, afile=''):
-    """guess an in-memory file's type
-       optional file name (as found in archive or decompressed)
-    """
-    return find_type(data, afile)
-
-
-def type_file(afile):
+def type_file(filename):
     """guess a file's type"""
+    # optimize for speed: prioritize extension over signature
+    (ftype, supported) = type_from_extension(filename)
+    if supported:
+        return (ftype, supported)
     try:
-        fin = open(afile)
+        fin = open(filename)
     except IOError as e:
-        log_error(str(e), afile)
+        log_error(str(e), filename)
         return
     data = fin.read(MAX_LEN)
-    return find_type(data, afile)
+    fin.close()
+    if is_text(data[:MAX_LEN]):
+        return (const.BF_TEXT, True)
+    return type_from_signature(data[:MAX_SIG_LEN])
